@@ -1,0 +1,87 @@
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: localhost
+    restart: always
+    hostname: 'gitlab'
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        # Add any other gitlab.rb configuration here, each on its own line
+        external_url 'https://gitlab'
+        gitlab_rails['initial_root_password'] = '<put_password_here>'
+        registry_external_url 'http://gitlab:5050'
+        nginx['redirect_http_to_https'] = true
+        gitlab_rails['registry_enabled'] = true
+        
+    expose:
+      - '80'
+      - '443'
+      - '22'
+      - '5050'
+    ports:
+      - '80:80'
+      - '443:443'
+      - '22:22'
+      - "5050:5050"
+    volumes:
+      - '$GITLAB_HOME/config:/etc/gitlab'
+      - '$GITLAB_HOME/logs:/var/log/gitlab'
+      - '$GITLAB_HOME/data:/var/opt/gitlab'
+    shm_size: '256m'
+  gitlab-runner:
+    image: gitlab/gitlab-runner:latest
+    container_name: gitlab-runner
+    restart: always
+    depends_on:
+      - gitlab
+    volumes:
+      - '$GITLAB_RUNNER_HOME/config:/etc/gitlab-runner'
+      - '/var/run/docker.sock:/var/run/docker.sock'
+  
+  sonarqube:
+    image: sonarqube:community
+    hostname: sonarqube
+    container_name: sonarqube
+    restart: always
+    read_only: true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/sonar
+      SONAR_JDBC_USERNAME: $SONAR_POSTGRES_USER
+      SONAR_JDBC_PASSWORD: $SONAR_POSTGRES_PASS
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_temp:/opt/sonarqube/temp
+    tmpfs:
+      - /tmp:size=256M,mode=1777
+    ports:
+      - "9000:9000"
+    expose:
+      - "9000"
+  db:
+    image: postgres:17
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d $${POSTGRES_DB} -U $${POSTGRES_USER}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    hostname: postgresql
+    container_name: postgresql
+    environment:
+      POSTGRES_USER: $SONAR_POSTGRES_USER
+      POSTGRES_PASSWORD: $SONAR_POSTGRES_PASS
+      POSTGRES_DB: $SONAR_POSTGRES_DB
+    volumes:
+      - postgresql:/var/lib/postgresql
+
+volumes:
+  sonarqube_data:
+  sonarqube_temp:
+  sonarqube_extensions:
+  sonarqube_logs:
+  postgresql:
